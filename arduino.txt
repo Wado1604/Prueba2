@@ -1,0 +1,175 @@
+#include <LiquidCrystal.h>
+
+LiquidCrystal lcd(12, 11, 10, A0, A1, A2);
+
+int leds[] = {6, 7, 8, 9};
+int botones[] = {2, A3, A4, A5};
+
+int buzzer = 5;  // ← BUZZER PASIVO AQUÍ
+
+String combinacion = "";
+String entrada = "";
+bool jugando = false;
+unsigned long startTime;
+unsigned long reactionTime;
+
+void setup() {
+  Serial.begin(9600);
+  lcd.begin(16, 2);
+  lcd.setCursor(0,0);
+  lcd.print("Deseas empezar?");
+  lcd.setCursor(0,1);
+  lcd.print("Presiona S+Enter");
+
+  pinMode(buzzer, OUTPUT);  // ← BUZZER
+
+  for (int i = 0; i < 4; i++) {
+    pinMode(leds[i], OUTPUT);
+    pinMode(botones[i], INPUT_PULLUP);
+  }
+}
+
+void sonidoNivel() {
+  tone(buzzer, 1200, 180);
+  delay(180);
+  tone(buzzer, 1500, 180);
+  delay(150);
+}
+
+void sonidoCorrecto() {
+  tone(buzzer, 1600, 150);
+  delay(150);
+  tone(buzzer, 2000, 200);
+  delay(200);
+}
+
+void sonidoError() {
+  tone(buzzer, 400, 350);
+  delay(350);
+  tone(buzzer, 200, 300);
+  delay(300);
+}
+
+void sonidoSecuenciaLista() {
+  tone(buzzer, 1000, 120);
+  delay(140);
+}
+
+void mostrarLCD(String texto) {
+  lcd.clear();
+  int sep = texto.indexOf('/');
+  if (sep != -1) {
+    lcd.setCursor(0, 0);
+    lcd.print(texto.substring(0, sep));
+    lcd.setCursor(0, 1);
+    lcd.print(texto.substring(sep + 1));
+  } else {
+    lcd.setCursor(0, 0);
+    lcd.print(texto);
+  }
+}
+
+void cuentaRegresiva() {
+  lcd.clear();
+  for (int i = 3; i > 0; i--) {
+    lcd.setCursor(0, 0);
+    lcd.print("Empieza en: ");
+    lcd.print(i);
+    delay(1000);
+    lcd.clear();
+  }
+  sonidoNivel();  // ← SONIDO DE INICIO DE NIVEL
+}
+
+void mostrarSecuencia() {
+  lcd.clear();
+  lcd.print("Luces...");
+  delay(600);
+
+  sonidoSecuenciaLista();  // ← SONIDO ANTES DE MOSTRAR
+
+  for (int i = 0; i < combinacion.length(); i++) {
+    int idx = combinacion[i] - '0';
+    digitalWrite(leds[idx], HIGH);
+    tone(buzzer, 900 + (idx * 200), 180);  // ← TONO SEGÚN LED
+    delay(600);
+    digitalWrite(leds[idx], LOW);
+    delay(350);
+  }
+
+  lcd.clear();
+  lcd.print("Tu turno!");
+  startTime = millis();
+  entrada = "";
+  jugando = true;
+}
+
+void mostrarCronometro() {
+  unsigned long tiempo = millis() - startTime;
+  lcd.setCursor(0, 1);
+  lcd.print("Tiempo: ");
+  lcd.print(tiempo);
+  lcd.print(" ms  ");
+}
+
+void loop() {
+  if (Serial.available()) {
+    String comando = Serial.readStringUntil('\n');
+    comando.trim();
+
+    if (comando.startsWith("start:")) {
+      combinacion = comando.substring(6);
+      cuentaRegresiva();
+      mostrarSecuencia();
+    }
+    else if (comando.startsWith("lcd:")) {
+      String texto = comando.substring(4);
+      mostrarLCD(texto);
+    }
+  }
+
+  if (jugando) {
+    mostrarCronometro();
+
+    for (int i = 0; i < 4; i++) {
+      if (digitalRead(botones[i]) == LOW) {
+        entrada += String(i);
+        delay(300);
+
+        if (entrada.length() == combinacion.length()) {
+          jugando = false;
+          reactionTime = millis() - startTime;
+          lcd.clear();
+
+          if (entrada == combinacion) {
+            lcd.print("Correcto!");
+            lcd.setCursor(0, 1);
+            lcd.print(reactionTime);
+            lcd.print(" ms");
+
+            sonidoCorrecto();  // ← SONIDO ACERTAR
+
+            Serial.println("ok:" + String(reactionTime));
+            delay(2500);
+            lcd.clear();
+            lcd.print("Siguiente...");
+            delay(1500);
+            Serial.println("next");
+          } else {
+            lcd.print("Error!");
+            lcd.setCursor(0, 1);
+            lcd.print(reactionTime);
+            lcd.print(" ms");
+
+            sonidoError();  // ← SONIDO ERROR
+
+            Serial.println("fail:" + String(reactionTime));
+            delay(3000);
+            lcd.clear();
+            lcd.print("Mira la camara..");
+          }
+        }
+      }
+    }
+  }
+}
